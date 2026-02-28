@@ -194,8 +194,8 @@ class RAGAnythingDoclingPipeline:
 
         with LightRAGLogContext(scene="knowledge_init"):
             rag = self._get_rag_instance(kb_name)
-            await rag._ensure_lightrag_initialized()
             original_llm_kwargs = self._set_init_llm_thinking_disabled(rag)
+            await rag._ensure_lightrag_initialized()
 
             total_files = len(classification.needs_mineru) + len(classification.text_files)
             idx = 0
