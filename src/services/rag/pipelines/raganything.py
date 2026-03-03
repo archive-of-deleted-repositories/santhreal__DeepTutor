@@ -18,6 +18,27 @@ from src.logging.adapters import LightRAGLogContext
 from src.services.llm.config import get_llm_config as _early_config_load  # noqa: F401
 
 
+def _patch_doc_processing_status() -> None:
+    """Patch DocProcessingStatus to tolerate unknown fields from newer LightRAG/RAGAnything versions."""
+    try:
+        from dataclasses import fields as dc_fields
+        from lightrag.base import DocProcessingStatus
+
+        _orig_init = DocProcessingStatus.__init__
+
+        def _tolerant_init(self, *args, **kwargs):
+            known = {f.name for f in dc_fields(DocProcessingStatus)}
+            kwargs = {k: v for k, v in kwargs.items() if k in known}
+            _orig_init(self, *args, **kwargs)
+
+        DocProcessingStatus.__init__ = _tolerant_init
+    except Exception:
+        pass
+
+
+_patch_doc_processing_status()
+
+
 class RAGAnythingPipeline:
     """
     RAG-Anything end-to-end Pipeline.
