@@ -363,7 +363,13 @@ class RAGAnythingPipeline:
         """
         with LightRAGLogContext(scene="rag_search"):
             rag = self._get_rag_instance(kb_name)
-            await rag._ensure_lightrag_initialized()
+            # Parser (MinerU) is not needed for search — skip the check
+            rag._parser_installation_checked = True
+            init_result = await rag._ensure_lightrag_initialized()
+            if isinstance(init_result, dict) and not init_result.get("success", True):
+                raise RuntimeError(
+                    f"LightRAG init failed for '{kb_name}': {init_result.get('error', 'unknown')}"
+                )
 
             answer = await rag.aquery(query, mode=mode, only_need_context=only_need_context)
             answer_str = answer if isinstance(answer, str) else str(answer)
