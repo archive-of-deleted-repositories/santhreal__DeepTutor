@@ -239,6 +239,12 @@ async def main() -> None:
         help="Max parallel profile entry-generation tasks (default: 6)",
     )
     parser.add_argument(
+        "--kb-concurrency",
+        type=int,
+        default=6,
+        help="Max parallel KB tasks (default: 6)",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Accepted for compatibility; output is overwritten by default.",
@@ -267,7 +273,7 @@ async def main() -> None:
     profile_cfg = cfg.get("profile_generation", {})
     rag_cfg = cfg.get("rag_query", {})
 
-    kb_parallel = max(1, min(args.concurrency, 4))
+    kb_parallel = max(1, args.kb_concurrency)
     print(
         f"KBs: {len(kb_names)} | Concurrency(profile): {args.concurrency} | "
         f"Concurrency(kb): {kb_parallel}"
@@ -326,6 +332,7 @@ async def main() -> None:
         "kb_names": kb_names,
         "output_root": str(output_root),
         "concurrency_profile": args.concurrency,
+        "concurrency_kb": kb_parallel,
         "overwrite": True,
         "results": kb_records,
         "num_kbs": len(kb_names),
