@@ -385,7 +385,7 @@ async def _openai_complete(
 
         timeout = aiohttp.ClientTimeout(total=120)
         connector = _get_aiohttp_connector()
-        async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
             try:
                 async with session.post(url, headers=headers, json=data) as resp:
                     if resp.status == 200:
@@ -496,7 +496,7 @@ async def _openai_stream(
 
     timeout = aiohttp.ClientTimeout(total=300)
     connector = _get_aiohttp_connector()
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
         async with session.post(url, headers=headers, json=data) as resp:
             if resp.status != 200:
                 error_text = await resp.text()
@@ -624,7 +624,7 @@ async def _anthropic_complete(
 
     timeout = aiohttp.ClientTimeout(total=120)
     connector = _get_aiohttp_connector()
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
         async with session.post(url, headers=headers, json=data) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -699,7 +699,7 @@ async def _anthropic_stream(
 
     timeout = aiohttp.ClientTimeout(total=300)
     connector = _get_aiohttp_connector()
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
         async with session.post(url, headers=headers, json=data) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -765,7 +765,7 @@ async def _cohere_complete(
 
     timeout = aiohttp.ClientTimeout(total=120)
     connector = _get_aiohttp_connector()
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
         async with session.post(url, headers=headers, json=data) as response:
             if response.status != 200:
                 error_text = await response.text()
@@ -812,7 +812,7 @@ async def fetch_models(
 
     timeout = aiohttp.ClientTimeout(total=30)
     connector = _get_aiohttp_connector()
-    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector, trust_env=True) as session:
         try:
             url = f"{base_url}/models"
             async with session.get(url, headers=headers) as resp:
