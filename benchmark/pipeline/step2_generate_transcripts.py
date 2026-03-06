@@ -65,7 +65,6 @@ async def _simulate_profile_backend(
     verbose: bool,
 ) -> dict:
     from benchmark.simulation.conversation import (
-        _aggregate_profile_practice_eval,
         _run_single_session,
         _summarize_session,
     )
@@ -146,7 +145,6 @@ async def _simulate_profile_backend(
                 "entry": entry,
                 "actual_turns": 0,
                 "practice_questions": [],
-                "practice_eval": None,
                 "error": str(e),
             }
 
@@ -154,7 +152,6 @@ async def _simulate_profile_backend(
         prior_sessions_summary.append(summary)
         sessions_results.append(result)
 
-    profile_practice_eval = _aggregate_profile_practice_eval(sessions_results)
     combined = {
         "kb_name": kb_name,
         "profile_id": profile_id,
@@ -163,7 +160,6 @@ async def _simulate_profile_backend(
         "mode": "auto",
         "evolve_profile": evolve_profile,
         "num_sessions": len(sessions_results),
-        "practice_eval_profile": profile_practice_eval,
         "sessions": [
             {
                 "entry_id": r["entry_id"],
@@ -171,7 +167,6 @@ async def _simulate_profile_backend(
                 "transcript": r.get("transcript", []),
                 "entry": r["entry"],
                 "practice_questions": r.get("practice_questions", []),
-                "practice_eval": r.get("practice_eval"),
             }
             for r in sessions_results
         ],

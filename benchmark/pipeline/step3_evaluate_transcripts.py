@@ -85,12 +85,20 @@ async def _evaluate_one_transcript(
 
 def _extract_eval_summary(eval_data: dict) -> dict:
     agg = eval_data.get("aggregate", {})
-    return {
+    summary = {
         "turn_count": agg.get("turn_count", {}),
         "gap_tracking": agg.get("gap_tracking", {}),
         "source_faithfulness": agg.get("source_faithfulness", {}),
         "teaching_quality": agg.get("teaching_quality", {}),
     }
+    pq = agg.get("practice_questions")
+    if pq:
+        summary["practice_questions"] = pq
+    return summary
+
+
+def _safe_avg(vals: list[float]) -> float | None:
+    return round(sum(vals) / len(vals), 2) if vals else None
 
 
 def _build_aggregate_summary(results: list[dict], output_root: Path) -> dict:
@@ -107,6 +115,12 @@ def _build_aggregate_summary(results: list[dict], output_root: Path) -> dict:
                 "faithfulness_scores": [],
                 "insightfulness_scores": [],
                 "applicability_scores": [],
+                "pq_total_questions": 0,
+                "pq_gap_coverage": [],
+                "pq_difficulty_abs": [],
+                "pq_groundedness": [],
+                "pq_distractor_quality": [],
+                "pq_diversity": [],
             },
         )
         try:
@@ -115,41 +129,54 @@ def _build_aggregate_summary(results: list[dict], output_root: Path) -> dict:
         except Exception:
             continue
         s = _extract_eval_summary(eval_data)
-        grouped[backend]["num_profiles"] += 1
-        grouped[backend]["paired_turns_total"] += (
+        g = grouped[backend]
+        g["num_profiles"] += 1
+        g["paired_turns_total"] += (
             s.get("turn_count", {}).get("paired_turns_total", 0)
         )
         faith = s.get("source_faithfulness", {}).get("avg_score_overall")
         if isinstance(faith, (int, float)):
-            grouped[backend]["faithfulness_scores"].append(float(faith))
+            g["faithfulness_scores"].append(float(faith))
         insight = s.get("teaching_quality", {}).get("avg_insightfulness_overall")
         if isinstance(insight, (int, float)):
-            grouped[backend]["insightfulness_scores"].append(float(insight))
+            g["insightfulness_scores"].append(float(insight))
         app = s.get("teaching_quality", {}).get("avg_applicability_overall")
         if isinstance(app, (int, float)):
-            grouped[backend]["applicability_scores"].append(float(app))
+            g["applicability_scores"].append(float(app))
+
+        pq = s.get("practice_questions", {})
+        if pq:
+            g["pq_total_questions"] += pq.get("total_questions_across_sessions", 0)
+            for key, lst_key in [
+                ("avg_gap_coverage", "pq_gap_coverage"),
+                ("avg_difficulty_abs", "pq_difficulty_abs"),
+                ("avg_groundedness", "pq_groundedness"),
+                ("avg_distractor_quality", "pq_distractor_quality"),
+                ("avg_diversity", "pq_diversity"),
+            ]:
+                v = pq.get(key)
+                if isinstance(v, (int, float)):
+                    g[lst_key].append(float(v))
 
     out: dict[str, dict] = {}
     for backend, s in grouped.items():
-        out[backend] = {
+        backend_summary: dict[str, Any] = {
             "num_profiles": s["num_profiles"],
             "paired_turns_total": s["paired_turns_total"],
-            "avg_faithfulness": (
-                round(sum(s["faithfulness_scores"]) / len(s["faithfulness_scores"]), 2)
-                if s["faithfulness_scores"]
-                else None
-            ),
-            "avg_insightfulness": (
-                round(sum(s["insightfulness_scores"]) / len(s["insightfulness_scores"]), 2)
-                if s["insightfulness_scores"]
-                else None
-            ),
-            "avg_applicability": (
-                round(sum(s["applicability_scores"]) / len(s["applicability_scores"]), 2)
-                if s["applicability_scores"]
-                else None
-            ),
+            "avg_faithfulness": _safe_avg(s["faithfulness_scores"]),
+            "avg_insightfulness": _safe_avg(s["insightfulness_scores"]),
+            "avg_applicability": _safe_avg(s["applicability_scores"]),
         }
+        if s["pq_total_questions"] > 0:
+            backend_summary["practice_questions"] = {
+                "total_questions": s["pq_total_questions"],
+                "avg_gap_coverage": _safe_avg(s["pq_gap_coverage"]),
+                "avg_difficulty_abs": _safe_avg(s["pq_difficulty_abs"]),
+                "avg_groundedness": _safe_avg(s["pq_groundedness"]),
+                "avg_distractor_quality": _safe_avg(s["pq_distractor_quality"]),
+                "avg_diversity": _safe_avg(s["pq_diversity"]),
+            }
+        out[backend] = backend_summary
     return {
         "timestamp": datetime.now().isoformat(),
         "output_root": str(output_root),

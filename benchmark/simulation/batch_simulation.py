@@ -272,7 +272,6 @@ async def _simulate_profile(
     Returns the combined multi-session result dict.
     """
     from benchmark.simulation.conversation import (
-        _aggregate_profile_practice_eval,
         _run_single_session,
         _summarize_session,
     )
@@ -351,7 +350,6 @@ async def _simulate_profile(
                 "entry": entry,
                 "actual_turns": 0,
                 "practice_questions": [],
-                "practice_eval": None,
                 "error": str(e),
             }
 
@@ -360,7 +358,6 @@ async def _simulate_profile(
         prior_sessions_summary.append(summary)
         sessions_results.append(result)
 
-    profile_practice_eval = _aggregate_profile_practice_eval(sessions_results)
     combined = {
         "profile_id": profile_id,
         "backend": backend,
@@ -368,7 +365,6 @@ async def _simulate_profile(
         "mode": "auto",
         "evolve_profile": evolve_profile,
         "num_sessions": len(sessions_results),
-        "practice_eval_profile": profile_practice_eval,
         "sessions": [
             {
                 "entry_id": r["entry_id"],
@@ -376,7 +372,6 @@ async def _simulate_profile(
                 "transcript": r.get("transcript", []),
                 "entry": r["entry"],
                 "practice_questions": r.get("practice_questions", []),
-                "practice_eval": r.get("practice_eval"),
             }
             for r in sessions_results
         ],
@@ -531,7 +526,6 @@ async def _process_one_profile(
 
             profile_result["simulations"][backend] = {
                 "num_sessions": sim_result.get("num_sessions", 0),
-                "practice_eval_profile": sim_result.get("practice_eval_profile"),
                 "transcript_path": str(transcript_path),
             }
 
@@ -587,8 +581,6 @@ def _build_and_print_summary(
         faith_scores: list[float] = []
         resolved_counts: list[int] = []
         total_gaps_counts: list[int] = []
-        practice_cov: list[float] = []
-        practice_diff: list[float] = []
         total_turns = 0
 
         for kb_res in all_kb_results:
@@ -599,14 +591,6 @@ def _build_and_print_summary(
                     continue
                 total_profiles += 1
                 total_sessions += n_sess
-
-                pe = sim.get("practice_eval_profile") or {}
-                cov = pe.get("avg_gap_coverage_across_sessions")
-                if isinstance(cov, (int, float)):
-                    practice_cov.append(float(cov))
-                diff = pe.get("avg_abs_difficulty_delta_across_sessions")
-                if isinstance(diff, (int, float)):
-                    practice_diff.append(float(diff))
 
                 ev = profile_res.get("evaluations", {}).get(backend, {})
                 tc = ev.get("turn_count", {})
@@ -642,16 +626,6 @@ def _build_and_print_summary(
                 if total_gaps_counts
                 else None
             ),
-            "avg_practice_gap_coverage": (
-                round(sum(practice_cov) / len(practice_cov), 2)
-                if practice_cov
-                else None
-            ),
-            "avg_practice_difficulty_delta": (
-                round(sum(practice_diff) / len(practice_diff), 2)
-                if practice_diff
-                else None
-            ),
         }
 
     # Print comparison
@@ -672,14 +646,6 @@ def _build_and_print_summary(
             f"  Avg gap resolution    : "
             f"{res if res is not None else 'N/A'} / "
             f"{tot if tot is not None else 'N/A'}"
-        )
-        pcov = stats["avg_practice_gap_coverage"]
-        print(
-            f"  Avg practice coverage : {pcov if pcov is not None else 'N/A'}"
-        )
-        pdiff = stats["avg_practice_difficulty_delta"]
-        print(
-            f"  Avg practice diff-abs : {pdiff if pdiff is not None else 'N/A'}"
         )
 
     print("\n" + "=" * 70)
