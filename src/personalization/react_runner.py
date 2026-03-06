@@ -248,34 +248,83 @@ def _log_observations(
 # ======================================================================
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+_TRAILING_COMMA_RE = re.compile(r",\s*([}\]])")
+
+
+def _normalize_text(text: str) -> str:
+    """Strip BOM / NUL and normalize smart quotes."""
+    text = text.lstrip("\ufeff\x00").strip()
+    for lq, rq in [("\u201c", '"'), ("\u201d", '"'), ("\u2018", "'"), ("\u2019", "'")]:
+        text = text.replace(lq, rq)
+    return text
+
+
+def _try_parse(candidate: str) -> dict[str, Any] | None:
+    """Attempt JSON parse with trailing-comma cleanup."""
+    for txt in (candidate, _TRAILING_COMMA_RE.sub(r"\1", candidate)):
+        try:
+            data = json.loads(txt)
+            if isinstance(data, dict):
+                return data
+        except (json.JSONDecodeError, ValueError):
+            continue
+    return None
+
+
+def _repair_truncated(text: str) -> dict[str, Any] | None:
+    """Try to recover a usable dict from JSON truncated by max_tokens.
+
+    Strategy: close any open braces/brackets and re-parse. Then ensure the
+    required keys exist so the ReAct loop can continue.
+    """
+    open_b = text.count("{") - text.count("}")
+    open_s = text.count("[") - text.count("]")
+    if open_b <= 0 and open_s <= 0:
+        return None
+    patched = text.rstrip(", \t\n")
+    patched += "]" * max(open_s, 0)
+    patched += "}" * max(open_b, 0)
+    return _try_parse(patched)
 
 
 def _parse_react_json(text: str) -> dict[str, Any]:
-    """Best-effort parse of the agent's JSON response."""
-    text = text.strip()
+    """Best-effort parse of the agent's JSON response.
+
+    Tries, in order:
+      1. Direct parse (optionally from a ```json``` fenced block).
+      2. Extract outermost ``{…}`` substring and parse.
+      3. Repair truncated JSON by closing open braces/brackets.
+      4. Fallback: treat entire text as thought, no actions, done=True.
+    """
+    text = _normalize_text(text)
+
     m = _JSON_BLOCK_RE.search(text)
     if m:
         text = m.group(1).strip()
 
-    try:
-        data = json.loads(text)
-        if isinstance(data, dict):
-            return data
-    except json.JSONDecodeError:
-        pass
+    # --- strategy 1: direct parse ---
+    result = _try_parse(text)
+    if result is not None:
+        return result
 
+    # --- strategy 2: outermost { … } ---
     start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            data = json.loads(text[start : end + 1])
-            if isinstance(data, dict):
-                return data
-        except json.JSONDecodeError:
-            pass
+    if start >= 0:
+        end = text.rfind("}")
+        if end > start:
+            result = _try_parse(text[start : end + 1])
+            if result is not None:
+                return result
+
+        # --- strategy 3: truncated JSON repair (from first '{' onward) ---
+        result = _repair_truncated(text[start:])
+        if result is not None:
+            logger.debug("[ReAct] Recovered truncated JSON (%d open braces closed)", 
+                         text[start:].count("{") - text[start:].count("}"))
+            return result
 
     logger.warning("[ReAct] Failed to parse JSON response: %s", text[:200])
-    return {"thought": text, "actions": [], "done": True}
+    return {"thought": text[:500], "actions": [], "done": True}
 
 
 def _format_observations(results: list[tuple[str, str]]) -> str:
