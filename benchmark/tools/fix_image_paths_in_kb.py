@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from dataclasses import dataclass
@@ -37,6 +38,7 @@ ANSI_RESET = "\033[0m"
 ANSI_BOLD = "\033[1m"
 
 TARGET_SUBDIRS = ("auto/images", "docling/images", "content_list")
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp")
 
 
 @dataclass
@@ -63,20 +65,53 @@ def _looks_like_stale_path(value: str) -> bool:
     return any(token in v for token in TARGET_SUBDIRS)
 
 
-def _maybe_rewrite_path(value: str, images_dir: Path) -> str:
-    """Return rewritten path if value is stale and basename exists in kb/images."""
+def _rewrite_embedded_paths(value: str, images_dir: Path, stats: dict[str, int]) -> str:
+    """
+    Rewrite stale image paths embedded inside longer strings.
+
+    Example:
+      "Image Path: /.../content_list/.../auto/images/abc.jpg"
+      -> "Image Path: /.../knowledge_bases/<kb>/images/abc.jpg"
+    """
+    # Match path-like substrings that include stale dirs and an image filename.
+    pattern = re.compile(
+        r'([^\s"\'<>]*?(?:content_list|auto/images|docling/images)[^\s"\'<>]*?'
+        r'(?:\.png|\.jpg|\.jpeg|\.webp|\.gif|\.bmp))',
+        flags=re.IGNORECASE,
+    )
+
+    def _replace(match: re.Match[str]) -> str:
+        old = match.group(1)
+        basename = Path(old).name
+        if not basename:
+            return old
+        candidate = images_dir / basename
+        if candidate.exists():
+            stats["replaced"] += 1
+            return str(candidate.resolve())
+        return old
+
+    return pattern.sub(_replace, value)
+
+
+def _maybe_rewrite_path(value: str, images_dir: Path, stats: dict[str, int]) -> str:
+    """Return rewritten path if stale and basename exists in kb/images."""
     if not isinstance(value, str):
         return value
-    if not _looks_like_stale_path(value):
-        return value
 
-    basename = Path(value).name
-    if not basename:
-        return value
+    # 1) Embedded path inside longer text
+    rewritten = _rewrite_embedded_paths(value, images_dir, stats)
+    if rewritten != value:
+        return rewritten
 
-    candidate = images_dir / basename
-    if candidate.exists():
-        return str(candidate.resolve())
+    # 2) Whole-string path rewrite
+    if _looks_like_stale_path(value):
+        basename = Path(value).name
+        if basename:
+            candidate = images_dir / basename
+            if candidate.exists():
+                stats["replaced"] += 1
+                return str(candidate.resolve())
     return value
 
 
@@ -87,10 +122,7 @@ def _rewrite_obj(obj: Any, images_dir: Path, stats: dict[str, int]) -> Any:
         return [_rewrite_obj(x, images_dir, stats) for x in obj]
     if isinstance(obj, str):
         stats["scanned"] += 1
-        new_value = _maybe_rewrite_path(obj, images_dir)
-        if new_value != obj:
-            stats["replaced"] += 1
-        return new_value
+        return _maybe_rewrite_path(obj, images_dir, stats)
     return obj
 
 
@@ -126,10 +158,19 @@ def _collect_target_jsons(kb_dir: Path) -> list[Path]:
     cl_dir = kb_dir / "content_list"
     rag_dir = kb_dir / "rag_storage"
     if cl_dir.is_dir():
-        targets.extend(sorted(cl_dir.glob("*.json")))
+        targets.extend(sorted(cl_dir.glob("**/*.json")))
     if rag_dir.is_dir():
-        targets.extend(sorted(rag_dir.glob("*.json")))
-    return targets
+        targets.extend(sorted(rag_dir.glob("**/*.json")))
+    # Deduplicate while preserving order
+    seen = set()
+    unique_targets: list[Path] = []
+    for p in targets:
+        sp = str(p.resolve())
+        if sp in seen:
+            continue
+        seen.add(sp)
+        unique_targets.append(p)
+    return unique_targets
 
 
 def _iter_kb_dirs(base: Path, kb_filter: set[str] | None) -> list[Path]:
@@ -156,6 +197,11 @@ def main() -> None:
         "--no-backup",
         action="store_true",
         help="Do not create .bak timestamped backups before writing.",
+    )
+    parser.add_argument(
+        "--clear-llm-cache",
+        action="store_true",
+        help="Also clear rag_storage/kv_store_llm_response_cache.json after rewriting.",
     )
     args = parser.parse_args()
 
@@ -218,6 +264,21 @@ def main() -> None:
                 f"  changed_files={kb_changed}, replaced_paths={kb_replaced}, errors={kb_errors}"
             )
             print(f"  {msg}")
+
+        if args.clear_llm_cache:
+            cache_path = kb_dir / "rag_storage" / "kv_store_llm_response_cache.json"
+            if cache_path.exists():
+                if args.dry_run:
+                    print(f"  {ANSI_YELLOW}~{ANSI_RESET} would clear cache: {cache_path.name}")
+                else:
+                    try:
+                        if not args.no_backup:
+                            _backup_file(cache_path)
+                        _dump_json(cache_path, {})
+                        print(f"  {ANSI_GREEN}✓{ANSI_RESET} cleared cache: {cache_path.name}")
+                    except Exception as e:
+                        total_errors += 1
+                        print(f"  {ANSI_RED}✗{ANSI_RESET} clear cache failed: {e}")
         print()
 
     print("=" * 72)
