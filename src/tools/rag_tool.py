@@ -151,6 +151,7 @@ list_providers = RAGService.list_providers
 if __name__ == "__main__":
     import argparse
     import sys
+    import time
 
     if sys.platform == "win32":
         import io
@@ -184,14 +185,18 @@ if __name__ == "__main__":
         help="Override KB base directory (optional)",
     )
     args = parser.parse_args()
+    started = time.perf_counter()
 
     # List available providers
+    provider_started = time.perf_counter()
     print("Available RAG Pipelines:")
     for provider in get_available_providers():
         print(f"  - {provider['id']}: {provider['description']}")
     print(f"\nCurrent provider: {get_current_provider()}\n")
+    print(f"[Timing] list_providers={(time.perf_counter() - provider_started):.2f}s")
 
     # Test search (requires existing knowledge base)
+    search_started = time.perf_counter()
     result = asyncio.run(
         rag_search(
             args.query,
@@ -201,7 +206,9 @@ if __name__ == "__main__":
             kb_base_dir=args.kb_base_dir,
         )
     )
+    print(f"[Timing] rag_search={(time.perf_counter() - search_started):.2f}s")
 
     print(f"Query: {result['query']}")
     print(f"Answer: {result['answer']}")
     print(f"Provider: {result.get('provider', 'unknown')}")
+    print(f"[Timing] total={(time.perf_counter() - started):.2f}s")
