@@ -25,6 +25,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -240,6 +241,11 @@ async def main() -> None:
         help="LLM temperature for evaluation",
     )
     parser.add_argument(
+        "--model",
+        default="",
+        help="Override LLM model for step3 evaluation. If set, ignores env LLM_MODEL.",
+    )
+    parser.add_argument(
         "--skip-turns",
         action="store_true",
         help="Skip per-turn LLM metrics and keep only turn_count",
@@ -250,6 +256,16 @@ async def main() -> None:
         help="Force re-evaluation and overwrite existing outputs.",
     )
     args = parser.parse_args()
+
+    if args.model:
+        # Force model override for this process.
+        os.environ["LLM_MODEL"] = args.model
+        try:
+            from src.services.llm.config import clear_llm_config_cache
+
+            clear_llm_config_cache()
+        except Exception:
+            pass
 
     kb_names = _parse_names(args.kb_names)
     backends = _parse_names(args.backends)
@@ -264,6 +280,7 @@ async def main() -> None:
 
     print(f"KBs: {len(kb_names)} | Backends: {backends}")
     print(f"Concurrency(transcript): {args.concurrency}")
+    print(f"Model: {args.model or os.getenv('LLM_MODEL', '')}")
     print(
         f"Resume mode: {'disabled (--force)' if args.force else 'enabled (skip existing evaluations)'}"
     )
