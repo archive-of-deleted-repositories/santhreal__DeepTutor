@@ -57,7 +57,11 @@ def _build_backend_markdown_table(by_backend: dict[str, dict[str, Any]]) -> str:
         "Faith Fail",
         "Teach Fail",
         "PQ Fail",
+        "PQ Fitness",
         "PQ Ground",
+        "PQ Diversity",
+        "PQ AnsQual",
+        "PQ Cross",
     ]
     lines = [
         "| " + " | ".join(headers) + " |",
@@ -77,7 +81,11 @@ def _build_backend_markdown_table(by_backend: dict[str, dict[str, Any]]) -> str:
             _fmt_ratio_pct(b.get("faithfulness_eval_failed_ratio")),
             _fmt_ratio_pct(b.get("teaching_quality_eval_failed_ratio")),
             _fmt_ratio_pct(pq.get("eval_failed_ratio")),
+            _fmt_num(pq.get("avg_fitness")),
             _fmt_num(pq.get("avg_groundedness")),
+            _fmt_num(pq.get("avg_diversity")),
+            _fmt_num(pq.get("avg_answer_quality")),
+            _fmt_num(pq.get("avg_cross_concept")),
         ]
         lines.append("| " + " | ".join(row) + " |")
     return "\n".join(lines)
